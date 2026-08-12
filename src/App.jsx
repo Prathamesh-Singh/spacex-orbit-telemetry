@@ -118,15 +118,17 @@ export default function App() {
           ) : (
             <>
               {activeTab === 'home' && (
-                <HeroIntroSection
-                  onNavigate={setActiveTab}
-                  totalSatellites={satellites?.length || 0}
-                  nextLaunch={nextLaunch}
-                />
+                <div style={{ width: '100%', height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <HeroIntroSection
+                    onNavigate={setActiveTab}
+                    totalSatellites={satellites?.length || 0}
+                    nextLaunch={nextLaunch}
+                  />
+                </div>
               )}
 
               {activeTab === 'news' && (
-                <div style={{ overflowY: 'auto', height: '100%' }}>
+                <div style={{ width: '100%', height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
                   <SpaceNewsView />
                 </div>
               )}
@@ -146,26 +148,32 @@ export default function App() {
               )}
 
               {activeTab === 'launches' && (
-                <SpaceXLaunchesView
-                  nextLaunch={nextLaunch}
-                  launches={launches || []}
-                  onSelectLaunch={l => console.log('Selected launch:', l)}
-                />
+                <div style={{ width: '100%', height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <SpaceXLaunchesView
+                    nextLaunch={nextLaunch}
+                    launches={launches || []}
+                    onSelectLaunch={l => console.log('Selected launch:', l)}
+                  />
+                </div>
               )}
 
               {activeTab === 'starlink' && (
-                <StarlinkAnalyticsView
-                  satellites={satellites || []}
-                  onFilterStarlink={() => setActiveTab('globe')}
-                />
+                <div style={{ width: '100%', height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <StarlinkAnalyticsView
+                    satellites={satellites || []}
+                    onFilterStarlink={() => setActiveTab('globe')}
+                  />
+                </div>
               )}
 
               {activeTab === 'rockets' && (
-                <RocketFleetView rockets={rockets || []} />
+                <div style={{ width: '100%', height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <RocketFleetView rockets={rockets || []} />
+                </div>
               )}
 
               {activeTab === 'future' && (
-                <div style={{ overflowY: 'auto', height: '100%' }}>
+                <div style={{ width: '100%', height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
                   <FutureProjectsView />
                 </div>
               )}

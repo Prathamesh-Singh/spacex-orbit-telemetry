@@ -761,6 +761,9 @@ html, body, #root {
     display: block !important;
     margin: 0 auto;
   }
+  .btn-simulator-desktop-only {
+    display: none !important;
+  }
 }
 
 @media (max-width: 480px) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Globe, Rocket, Radio, Shield, Volume2, VolumeX, RefreshCw, Activity, Sparkles, Home, Newspaper, ChevronDown } from 'lucide-react';
+import { Globe, Rocket, Radio, Shield, Volume2, VolumeX, RefreshCw, Activity, Sparkles, Home, Newspaper } from 'lucide-react';
 
 export default function Header({ activeTab, setActiveTab, totalSatellites, nextLaunch, onRefresh }) {
   const [utcTime, setUtcTime] = useState('');
@@ -36,17 +36,16 @@ export default function Header({ activeTab, setActiveTab, totalSatellites, nextL
         </div>
       </div>
 
-      {/* 📱 Mobile Dropdown Menu Selector (Visible on mobile/tablets < 768px) */}
+      {/* 📱 Mobile Dropdown Menu Selector (Visible on mobile/tablets < 768px - Simulator removed for mobile) */}
       <div className="mobile-nav-container">
         <select
           className="mobile-nav-select"
-          value={activeTab}
+          value={activeTab === 'simulator' ? 'home' : activeTab}
           onChange={(e) => handleTabSwitch(e.target.value)}
         >
           <option value="home">🏠 Overview</option>
           <option value="news">📰 Space News</option>
           <option value="globe">🌍 3D Orbit Tracker</option>
-          <option value="simulator">🚀 3D Launch Simulator</option>
           <option value="launches">📡 Launch Manifest</option>
           <option value="starlink">🛰️ Starlink Analytics</option>
           <option value="rockets">🛡️ Rocket Fleet</option>

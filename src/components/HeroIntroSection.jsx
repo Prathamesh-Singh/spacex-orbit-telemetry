@@ -107,7 +107,7 @@ export default function HeroIntroSection({ onNavigate, totalSatellites, nextLaun
           </button>
 
           <button
-            className="btn-secondary"
+            className="btn-secondary btn-simulator-desktop-only"
             style={{
               padding: '16px 28px',
               fontSize: '0.92rem',
@@ -115,7 +115,6 @@ export default function HeroIntroSection({ onNavigate, totalSatellites, nextLaun
               textTransform: 'uppercase',
               fontWeight: '700',
               borderRadius: '4px',
-              display: 'inline-flex',
               alignItems: 'center',
               justify: 'center',
               gap: '10px'
