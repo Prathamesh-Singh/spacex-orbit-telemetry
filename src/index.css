@@ -728,6 +728,18 @@ html, body, #root {
   }
 }
 
+.roadmap-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.35fr;
+  gap: 24px;
+}
+
+@media (max-width: 1024px) {
+  .roadmap-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Mobile Dropdown Menu Styling */
 .mobile-nav-container {
   display: none;

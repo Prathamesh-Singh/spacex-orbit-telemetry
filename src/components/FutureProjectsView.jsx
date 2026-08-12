@@ -127,28 +127,28 @@ export default function FutureProjectsView() {
     : FUTURE_PROJECTS.filter(p => p.category === filter);
 
   return (
-    <div style={{ padding: '28px', maxWidth: '1400px', margin: '0 auto', color: '#fff' }}>
+    <div className="launches-view-container" style={{ paddingBottom: '60px' }}>
       {/* Top Banner Header */}
-      <div className="glass-panel" style={{ padding: '24px 30px', borderLeft: '4px solid #00f0ff', marginBottom: '24px' }}>
+      <div className="glass-panel" style={{ padding: '20px 24px', borderLeft: '4px solid #00f0ff', marginBottom: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#00f0ff', fontFamily: 'monospace', fontSize: '0.85rem', fontWeight: 'bold' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#00f0ff', fontFamily: 'monospace', fontSize: '0.8rem', fontWeight: 'bold' }}>
               <Sparkles size={16} /> SPACEX ROADMAP & NEXT-GEN INITIATIVES
             </div>
-            <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2.0rem', fontWeight: '800', margin: '6px 0 4px 0' }}>
+            <h2 className="section-title" style={{ fontSize: 'clamp(1.5rem, 3vw, 2.2rem)', margin: '6px 0 4px 0' }}>
               SpaceX Future Plans & Active Development
             </h2>
-            <p style={{ color: '#94a3b8', fontSize: '0.95rem', margin: 0 }}>
+            <p style={{ color: '#94a3b8', fontSize: '0.88rem', margin: 0 }}>
               From Mars Base Alpha and NASA Artemis Moon HLS to Direct-to-Cell satellite networks and Mach 25 suborbital flight.
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <div className="stat-card" style={{ minWidth: '120px' }}>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <div className="stat-card" style={{ minWidth: '110px' }}>
               <div className="stat-label">MARS GOAL</div>
               <div className="stat-value gold">1M Humans</div>
             </div>
-            <div className="stat-card" style={{ minWidth: '120px' }}>
+            <div className="stat-card" style={{ minWidth: '110px' }}>
               <div className="stat-label">LUNAR LANDING</div>
               <div className="stat-value cyan">2026 - 2027</div>
             </div>
@@ -156,7 +156,7 @@ export default function FutureProjectsView() {
         </div>
 
         {/* Category Filters */}
-        <div className="filter-pill-container" style={{ marginTop: '20px' }}>
+        <div className="filter-pill-container" style={{ marginTop: '18px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <button className={`filter-pill ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
             <Compass size={14} /> All Initiatives
           </button>
@@ -175,8 +175,8 @@ export default function FutureProjectsView() {
         </div>
       </div>
 
-      {/* Main Grid: Left Projects List + Right Detail Deep Dive */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.35fr', gap: '24px' }}>
+      {/* Main Responsive Grid: Left Projects List + Right Detail Deep Dive */}
+      <div className="roadmap-grid">
         {/* Left Column: Project Cards List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {filteredProjects.map(proj => {
@@ -186,15 +186,15 @@ export default function FutureProjectsView() {
                 key={proj.id}
                 className="glass-panel"
                 style={{
-                  padding: '20px',
+                  padding: '18px',
                   cursor: 'pointer',
                   borderLeft: isSelected ? `4px solid ${proj.statusColor}` : '1px solid rgba(255,255,255,0.08)',
-                  background: isSelected ? 'rgba(0, 240, 255, 0.06)' : undefined,
+                  background: isSelected ? 'rgba(0, 240, 255, 0.08)' : undefined,
                   transition: 'all 0.2s ease'
                 }}
                 onClick={() => setSelectedProject(proj)}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
                   <span className="brand-badge" style={{ background: `${proj.statusColor}22`, color: proj.statusColor }}>
                     {proj.status}
                   </span>
@@ -203,10 +203,10 @@ export default function FutureProjectsView() {
                   </span>
                 </div>
 
-                <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: '700', margin: '4px 0 6px 0' }}>
+                <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.15rem', fontWeight: '700', margin: '4px 0 6px 0', color: '#ffffff' }}>
                   {proj.title}
                 </h3>
-                <p style={{ fontSize: '0.86rem', color: '#cbd5e1', lineHeight: '1.45', margin: 0 }}>
+                <p style={{ fontSize: '0.85rem', color: '#cbd5e1', lineHeight: '1.45', margin: 0 }}>
                   {proj.tagline}
                 </p>
 
@@ -226,48 +226,48 @@ export default function FutureProjectsView() {
         {/* Right Column: Interactive Mission Deep Dive Card */}
         <div>
           {selectedProject && (
-            <div className="glass-panel" style={{ padding: '28px', borderLeft: `4px solid ${selectedProject.statusColor}` }}>
+            <div className="glass-panel" style={{ padding: '22px', borderLeft: `4px solid ${selectedProject.statusColor}` }}>
               {/* Mission Patch & Header */}
-              <div style={{ display: 'flex', gap: '20px', alignItems: 'center', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap' }}>
                 <img
                   src={selectedProject.patchUrl}
                   alt={selectedProject.title}
-                  style={{ width: '90px', height: '90px', borderRadius: '12px', objectFit: 'cover', border: '2px solid rgba(0,240,255,0.3)' }}
+                  style={{ width: '75px', height: '75px', borderRadius: '10px', objectFit: 'cover', border: '2px solid rgba(0,240,255,0.3)' }}
                   onError={(e) => { e.target.src = '/assets/starship_patch.jpg'; }}
                 />
-                <div>
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div style={{ flex: 1, minWidth: '220px' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <span className="brand-badge" style={{ background: `${selectedProject.statusColor}22`, color: selectedProject.statusColor }}>
                       {selectedProject.status}
                     </span>
-                    <span style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#ffd700' }}>
+                    <span style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: '#ffd700' }}>
                       {selectedProject.badge}
                     </span>
                   </div>
-                  <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.65rem', fontWeight: '800', margin: '6px 0 2px 0' }}>
+                  <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(1.3rem, 2.5vw, 1.6rem)', fontWeight: '800', margin: '6px 0 2px 0', color: '#ffffff' }}>
                     {selectedProject.title}
                   </h2>
-                  <div style={{ fontSize: '0.85rem', color: '#00f0ff', fontFamily: 'monospace' }}>
+                  <div style={{ fontSize: '0.82rem', color: '#00f0ff', fontFamily: 'monospace' }}>
                     Target Operations Timeline: {selectedProject.targetYear}
                   </div>
                 </div>
               </div>
 
               {/* Description */}
-              <p style={{ fontSize: '0.94rem', color: '#e2e8f0', lineHeight: '1.6', marginBottom: '20px' }}>
+              <p style={{ fontSize: '0.9rem', color: '#e2e8f0', lineHeight: '1.6', marginBottom: '20px' }}>
                 {selectedProject.description}
               </p>
 
               {/* Technical Specifications Grid */}
-              <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.0rem', color: '#00f0ff', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Zap size={16} /> TECHNICAL SPECIFICATIONS & CAPABILITIES
+              <div style={{ marginBottom: '22px' }}>
+                <h4 style={{ fontFamily: 'var(--font-heading)', fontSize: '0.95rem', color: '#00f0ff', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Zap size={15} /> TECHNICAL SPECIFICATIONS & CAPABILITIES
                 </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
                   {selectedProject.stats.map((st, idx) => (
-                    <div key={idx} className="sat-telemetry-item" style={{ padding: '12px' }}>
-                      <div className="sat-telemetry-key">{st.label}</div>
-                      <div className="sat-telemetry-val" style={{ color: '#ffd700', fontSize: '1.15rem' }}>
+                    <div key={idx} className="sat-telemetry-item" style={{ padding: '10px' }}>
+                      <div className="sat-telemetry-key" style={{ fontSize: '0.68rem' }}>{st.label}</div>
+                      <div className="sat-telemetry-val" style={{ color: '#ffd700', fontSize: '1.05rem' }}>
                         {st.val}
                       </div>
                     </div>
@@ -277,10 +277,10 @@ export default function FutureProjectsView() {
 
               {/* Roadmap Timeline */}
               <div>
-                <h4 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.0rem', color: '#00f0ff', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Target size={16} /> STRATEGIC ROADMAP MILESTONES
+                <h4 style={{ fontFamily: 'var(--font-heading)', fontSize: '0.95rem', color: '#00f0ff', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Target size={15} /> STRATEGIC ROADMAP MILESTONES
                 </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {selectedProject.milestones.map((ms, idx) => (
                     <div
                       key={idx}
@@ -288,31 +288,33 @@ export default function FutureProjectsView() {
                         background: 'rgba(3,7,18,0.7)',
                         border: '1px solid rgba(255,255,255,0.08)',
                         borderRadius: '8px',
-                        padding: '14px',
+                        padding: '12px 14px',
                         display: 'flex',
-                        gap: '14px',
-                        alignItems: 'flex-start'
+                        gap: '12px',
+                        flexDirection: 'column'
                       }}
                     >
-                      <div style={{
-                        background: ms.status === 'COMPLETED' ? 'rgba(16,185,129,0.2)' : ms.status === 'IN PROGRESS' ? 'rgba(0,240,255,0.2)' : 'rgba(255,215,0,0.15)',
-                        color: ms.status === 'COMPLETED' ? '#10b981' : ms.status === 'IN PROGRESS' ? '#00f0ff' : '#ffd700',
-                        fontFamily: 'monospace',
-                        fontSize: '0.72rem',
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        whiteSpace: 'nowrap',
-                        fontWeight: 'bold'
-                      }}>
-                        {ms.year}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                        <span style={{ fontSize: '0.78rem', color: '#ffd700', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                          📅 {ms.year}
+                        </span>
+                        <span style={{
+                          fontSize: '0.68rem',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          background: ms.status === 'COMPLETED' ? 'rgba(16,185,129,0.2)' : ms.status === 'IN PROGRESS' ? 'rgba(0,240,255,0.2)' : 'rgba(255,215,0,0.15)',
+                          color: ms.status === 'COMPLETED' ? '#10b981' : ms.status === 'IN PROGRESS' ? '#00f0ff' : '#ffd700',
+                          fontFamily: 'monospace',
+                          fontWeight: 'bold'
+                        }}>
+                          {ms.status}
+                        </span>
                       </div>
-                      <div>
-                        <div style={{ fontWeight: '700', fontSize: '0.92rem', marginBottom: '2px' }}>
-                          {ms.title}
-                        </div>
-                        <div style={{ fontSize: '0.84rem', color: '#94a3b8', lineHeight: '1.4' }}>
-                          {ms.desc}
-                        </div>
+                      <div style={{ fontWeight: '700', fontSize: '0.92rem', color: '#ffffff' }}>
+                        {ms.title}
+                      </div>
+                      <div style={{ fontSize: '0.82rem', color: '#cbd5e1', lineHeight: '1.45' }}>
+                        {ms.desc}
                       </div>
                     </div>
                   ))}
