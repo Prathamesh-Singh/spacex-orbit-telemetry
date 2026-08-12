@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Globe, Rocket, Radio, Shield, Volume2, VolumeX, RefreshCw, Activity, Sparkles, Home, Newspaper } from 'lucide-react';
+import { Globe, Rocket, Radio, Shield, Volume2, VolumeX, RefreshCw, Activity, Sparkles, Home, Newspaper, ChevronDown } from 'lucide-react';
 
 export default function Header({ activeTab, setActiveTab, totalSatellites, nextLaunch, onRefresh }) {
   const [utcTime, setUtcTime] = useState('');
@@ -36,8 +36,26 @@ export default function Header({ activeTab, setActiveTab, totalSatellites, nextL
         </div>
       </div>
 
-      {/* Navigation Tabs - Compact Labels fit on all screen sizes */}
-      <nav className="nav-tabs">
+      {/* 📱 Mobile Dropdown Menu Selector (Visible on mobile/tablets < 768px) */}
+      <div className="mobile-nav-container">
+        <select
+          className="mobile-nav-select"
+          value={activeTab}
+          onChange={(e) => handleTabSwitch(e.target.value)}
+        >
+          <option value="home">🏠 Overview</option>
+          <option value="news">📰 Space News</option>
+          <option value="globe">🌍 3D Orbit Tracker</option>
+          <option value="simulator">🚀 3D Launch Simulator</option>
+          <option value="launches">📡 Launch Manifest</option>
+          <option value="starlink">🛰️ Starlink Analytics</option>
+          <option value="rockets">🛡️ Rocket Fleet</option>
+          <option value="future">✨ Mars Roadmap</option>
+        </select>
+      </div>
+
+      {/* 🖥️ Desktop Navigation Tabs (Visible on screens > 768px) */}
+      <nav className="nav-tabs desktop-nav">
         <button
           className={`nav-tab-btn ${activeTab === 'home' ? 'active' : ''}`}
           onClick={() => handleTabSwitch('home')}
