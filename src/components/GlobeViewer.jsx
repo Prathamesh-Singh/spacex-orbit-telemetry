@@ -1,367 +1,278 @@
 import React, { useEffect, useRef, useState } from 'react';
-import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Search, Globe, Radio, Zap, Shield, Play, Pause } from 'lucide-react';
+import Globe from 'globe.gl';
+import { Search, Play, Pause, RefreshCw } from 'lucide-react';
 import { satelliteApi } from '../services/satelliteApi';
 
 export default function GlobeViewer({ satellites, selectedSat, setSelectedSat, simSpeed, setSimSpeed }) {
   const containerRef = useRef(null);
+  const globeInstanceRef = useRef(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [isPaused, setIsPaused] = useState(false);
-  const [hoveredSat, setHoveredSat] = useState(null);
   const [activeCount, setActiveCount] = useState(0);
+  const [hoveredSat, setHoveredSat] = useState(null);
 
-  // Three.js References
-  const sceneRef = useRef(null);
-  const cameraRef = useRef(null);
-  const rendererRef = useRef(null);
-  const controlsRef = useRef(null);
-  const satMeshGroupRef = useRef(null);
-  const orbitLineRef = useRef(null);
-  const satsDataRef = useRef([]);
-
-  // Time tracking for simulation speed
   const simTimeRef = useRef(new Date());
 
-  // Initialize Three.js Engine
+  // Initialize Globe.gl 3D Engine with NASA Blue Marble & Night Lights
   useEffect(() => {
     if (!containerRef.current) return;
 
     const width = containerRef.current.clientWidth || window.innerWidth;
     const height = containerRef.current.clientHeight || (window.innerHeight - 65);
 
-    // 1. Scene
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#030712');
-    sceneRef.current = scene;
+    // Initialize 3D Globe with NASA Blue Marble Texture
+    const globe = Globe()(containerRef.current)
+      .width(width)
+      .height(height)
+      .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+      .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
+      .backgroundImageUrl('//unpkg.com/three-globe/example/img/night-sky.png')
+      .atmosphereColor('#00f0ff')
+      .atmosphereAltitude(0.18)
+      .pointOfView({ lat: 20, lng: 0, altitude: 2.2 });
 
-    // 2. Camera
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    camera.position.set(0, 2.2, 5.8);
-    cameraRef.current = camera;
-
-    // 3. Renderer
-    let renderer;
-    try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    } catch (e) {
-      renderer = new THREE.WebGLRenderer({ antialias: false, failIfMajorPerformanceCaveat: false });
-    }
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    containerRef.current.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
-
-    // 4. OrbitControls
-    const controls = new OrbitControls(camera, renderer.domElement);
+    // Enable OrbitControls Damping & Smooth Interaction
+    const controls = globe.controls();
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.rotateSpeed = 0.8;
-    controls.minDistance = 2.2;
-    controls.maxDistance = 14;
-    controlsRef.current = controls;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.4;
 
-    // 5. Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
-    scene.add(ambientLight);
+    // Custom 3D Object Renderer for Glowing Satellite Points
+    globe
+      .customLayerData([])
+      .customThreeObject(d => {
+        const color = d.type?.category === 'station' ? 0xffd700 : (d.type?.category === 'science' ? 0xa855f7 : 0x00f0ff);
+        const radius = d.type?.category === 'station' ? 0.045 : 0.032;
+        const THREE = window.THREE || globe.scene().children[0].constructor.module || require('three');
+        const geo = new THREE.SphereGeometry(radius, 10, 10);
+        const mat = new THREE.MeshBasicMaterial({ color });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.userData = d;
+        return mesh;
+      })
+      .customThreeObjectUpdate((obj, d) => {
+        // Compute 3D Keplerian position around Earth sphere (Radius = 100)
+        const pos = d.__pos || { lat: 0, lng: 0, altKm: 550 };
+        const altScale = 100 + (pos.altKm || 550) / 6371 * 100;
+        const latRad = pos.lat * (Math.PI / 180);
+        const lonRad = pos.lng * (Math.PI / 180);
 
-    const sunLight = new THREE.DirectionalLight(0xffffff, 1.6);
-    sunLight.position.set(5, 3, 5);
-    scene.add(sunLight);
+        obj.position.x = altScale * Math.cos(latRad) * Math.cos(lonRad);
+        obj.position.y = altScale * Math.sin(latRad);
+        obj.position.z = altScale * Math.cos(latRad) * Math.sin(lonRad);
+      })
+      .onCustomLayerClick((d) => {
+        if (d) setSelectedSat(d);
+      })
+      .onCustomLayerHover((d) => {
+        setHoveredSat(d);
+        if (containerRef.current) {
+          containerRef.current.style.cursor = d ? 'pointer' : 'default';
+        }
+      });
 
-    // 6. Earth Mesh (Radius = 2.0)
-    const earthGeo = new THREE.SphereGeometry(2.0, 64, 64);
-    const proceduralTex = createProceduralEarthTexture();
-    const earthMat = new THREE.MeshPhongMaterial({
-      map: proceduralTex,
-      shininess: 25,
-      specular: new THREE.Color(0x333333)
-    });
-    const earthMesh = new THREE.Mesh(earthGeo, earthMat);
-    scene.add(earthMesh);
+    globeInstanceRef.current = globe;
 
-    // Atmosphere Glow Outer Shell
-    const atmosGeo = new THREE.SphereGeometry(2.06, 48, 48);
-    const atmosMat = new THREE.MeshBasicMaterial({
-      color: 0x00f0ff,
-      transparent: true,
-      opacity: 0.14,
-      side: THREE.BackSide
-    });
-    const atmosMesh = new THREE.Mesh(atmosGeo, atmosMat);
-    scene.add(atmosMesh);
-
-    // Satellite Mesh Group
-    const satGroup = new THREE.Group();
-    scene.add(satGroup);
-    satMeshGroupRef.current = satGroup;
-
-    // Window Resize Handler
+    // Handle Window Resize
     const handleResize = () => {
-      if (!containerRef.current || !renderer || !camera) return;
+      if (!containerRef.current || !globe) return;
       const w = containerRef.current.clientWidth || window.innerWidth;
       const h = containerRef.current.clientHeight || (window.innerHeight - 65);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
+      globe.width(w).height(h);
     };
     window.addEventListener('resize', handleResize);
 
-    // Main 60fps Real-Time Orbit Propagation Animation Loop
-    let animationFrameId;
-    let lastRealTime = performance.now();
-
-    const animate = (time) => {
-      animationFrameId = requestAnimationFrame(animate);
-      const deltaSec = (time - lastRealTime) / 1000;
-      lastRealTime = time;
-
-      // Slow Earth rotation
-      if (earthMesh) {
-        earthMesh.rotation.y += 0.02 * deltaSec;
-      }
-
-      // Advance simulation time
-      if (!isPaused) {
-        simTimeRef.current = new Date(simTimeRef.current.getTime() + deltaSec * 1000 * simSpeed);
-      }
-
-      // Propagate positions of active satellites in 3D space
-      if (satMeshGroupRef.current && satMeshGroupRef.current.children.length > 0) {
-        const currTime = simTimeRef.current;
-        satMeshGroupRef.current.children.forEach((mesh) => {
-          const satData = mesh.userData;
-          if (satData) {
-            const pos = satelliteApi.computePosition(satData, currTime);
-            const altScale = 2.0 + (pos.altKm || 550) / 6371;
-            const latRad = (pos.lat || 0) * (Math.PI / 180);
-            const lonRad = (pos.lng || 0) * (Math.PI / 180);
-
-            mesh.position.x = altScale * Math.cos(latRad) * Math.cos(lonRad);
-            mesh.position.y = altScale * Math.sin(latRad);
-            mesh.position.z = altScale * Math.cos(latRad) * Math.sin(lonRad);
-          }
-        });
-      }
-
-      controls.update();
-      renderer.render(scene, camera);
-    };
-    animate(performance.now());
-
     return () => {
-      cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
-      if (renderer.domElement && containerRef.current) {
-        containerRef.current.removeChild(renderer.domElement);
+      if (containerRef.current) {
+        containerRef.current.innerHTML = '';
       }
-      renderer.dispose();
     };
-  }, [simSpeed, isPaused]);
+  }, []);
 
-  // Update Satellites Mesh Group when filter or search changes
+  // Update Satellites Data & Real-Time 3D Positions across 360 Degrees
   useEffect(() => {
-    if (!satMeshGroupRef.current || !satellites) return;
-
-    // Clear existing meshes
-    while (satMeshGroupRef.current.children.length > 0) {
-      const child = satMeshGroupRef.current.children[0];
-      satMeshGroupRef.current.remove(child);
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    }
+    if (!satellites || !globeInstanceRef.current) return;
 
     const filtered = satellites.filter(sat => {
       const matchesSearch = !searchQuery || sat.name.toLowerCase().includes(searchQuery.toLowerCase()) || String(sat.noradId).includes(searchQuery);
-      const matchesType = filterType === 'all' || sat.type.category === filterType;
+      const matchesType = filterType === 'all' || sat.type?.category === filterType;
       return matchesSearch && matchesType;
     });
 
     setActiveCount(filtered.length);
-    satsDataRef.current = filtered;
 
-    if (filtered.length === 0) return;
-
-    // High Visibility Glowing Sphere Geometry for orbital nodes (Radius = 0.032)
-    const satGeo = new THREE.SphereGeometry(0.032, 12, 12);
-    const starlinkMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
-    const stationMat = new THREE.MeshBasicMaterial({ color: 0xffd700 });
-    const scienceMat = new THREE.MeshBasicMaterial({ color: 0xa855f7 });
-
+    // Compute 3D positions for all filtered satellites
     const now = simTimeRef.current;
-
-    filtered.forEach((sat) => {
-      let mat = starlinkMat;
-      if (sat.type?.category === 'station') mat = stationMat;
-      else if (sat.type?.category === 'science') mat = scienceMat;
-
-      const mesh = new THREE.Mesh(satGeo, mat);
+    const dataWithPositions = filtered.map(sat => {
       const pos = satelliteApi.computePosition(sat, now);
-
-      const altScale = 2.0 + (pos.altKm || 550) / 6371;
-      const latRad = (pos.lat || 0) * (Math.PI / 180);
-      const lonRad = (pos.lng || 0) * (Math.PI / 180);
-
-      mesh.position.x = altScale * Math.cos(latRad) * Math.cos(lonRad);
-      mesh.position.y = altScale * Math.sin(latRad);
-      mesh.position.z = altScale * Math.cos(latRad) * Math.sin(lonRad);
-
-      mesh.userData = sat;
-      satMeshGroupRef.current.add(mesh);
+      return {
+        ...sat,
+        __pos: pos
+      };
     });
+
+    globeInstanceRef.current.customLayerData(dataWithPositions);
   }, [satellites, filterType, searchQuery]);
 
-  // Raycaster for Hover & Selection
+  // Real-time animation tick for satellite orbits
   useEffect(() => {
-    if (!rendererRef.current || !cameraRef.current || !satMeshGroupRef.current) return;
+    let animId;
+    let lastTime = performance.now();
 
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
+    const tick = (time) => {
+      animId = requestAnimationFrame(tick);
+      const deltaSec = (time - lastTime) / 1000;
+      lastTime = time;
 
-    const handlePointerMove = (e) => {
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      if (!isPaused && globeInstanceRef.current) {
+        simTimeRef.current = new Date(simTimeRef.current.getTime() + deltaSec * 1000 * simSpeed);
+        const currTime = simTimeRef.current;
 
-      raycaster.setFromCamera(mouse, cameraRef.current);
-      const intersects = raycaster.intersectObjects(satMeshGroupRef.current.children);
-
-      if (intersects.length > 0) {
-        const satData = intersects[0].object.userData;
-        setHoveredSat(satData);
-        containerRef.current.style.cursor = 'pointer';
-      } else {
-        setHoveredSat(null);
-        containerRef.current.style.cursor = 'grab';
+        const currentData = globeInstanceRef.current.customLayerData();
+        if (currentData && currentData.length > 0) {
+          const updated = currentData.map(sat => ({
+            ...sat,
+            __pos: satelliteApi.computePosition(sat, currTime)
+          }));
+          globeInstanceRef.current.customLayerData(updated);
+        }
       }
     };
 
-    const handleClick = (e) => {
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-      raycaster.setFromCamera(mouse, cameraRef.current);
-      const intersects = raycaster.intersectObjects(satMeshGroupRef.current.children);
-
-      if (intersects.length > 0) {
-        const satData = intersects[0].object.userData;
-        setSelectedSat(satData);
-      }
-    };
-
-    const domElement = rendererRef.current.domElement;
-    domElement.addEventListener('mousemove', handlePointerMove);
-    domElement.addEventListener('click', handleClick);
-
-    return () => {
-      domElement.removeEventListener('mousemove', handlePointerMove);
-      domElement.removeEventListener('click', handleClick);
-    };
-  }, [setSelectedSat]);
-
-  // Draw Selected Satellite Orbit Trajectory Ring
-  useEffect(() => {
-    if (!sceneRef.current) return;
-
-    if (orbitLineRef.current) {
-      sceneRef.current.remove(orbitLineRef.current);
-      orbitLineRef.current.geometry.dispose();
-      orbitLineRef.current.material.dispose();
-      orbitLineRef.current = null;
-    }
-
-    if (!selectedSat) return;
-
-    const points = [];
-    const altScale = 2.0 + (selectedSat.altitudeKm || 550) / 6371;
-    const incRad = ((selectedSat.inclination || 53) * Math.PI) / 180;
-
-    for (let i = 0; i <= 128; i++) {
-      const theta = (i / 128) * Math.PI * 2;
-      const x = altScale * Math.cos(theta);
-      const y = altScale * Math.sin(theta) * Math.sin(incRad);
-      const z = altScale * Math.sin(theta) * Math.cos(incRad);
-      points.push(new THREE.Vector3(x, y, z));
-    }
-
-    const orbitGeo = new THREE.BufferGeometry().setFromPoints(points);
-    const orbitMat = new THREE.LineBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.85 });
-    const orbitLine = new THREE.Line(orbitGeo, orbitMat);
-    sceneRef.current.add(orbitLine);
-    orbitLineRef.current = orbitLine;
-  }, [selectedSat]);
+    animId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animId);
+  }, [isPaused, simSpeed]);
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-      {/* 3D WebGL Canvas Container */}
+    <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', background: '#030712' }}>
+      {/* 3D Earth Globe Viewport */}
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
-      {/* Top Left Mission Telemetry HUD Controls */}
-      <div className="globe-hud-overlay">
-        {/* Search Bar */}
-        <div className="glass-panel" style={{ padding: '10px 14px' }}>
-          <div className="search-input-wrapper">
-            <Search size={16} className="search-icon" />
+      {/* 🎛️ SLEEK COMPACT TOP-LEFT TELEMETRY HUD TOOLBAR */}
+      <div style={{
+        position: 'absolute',
+        top: '16px',
+        left: '16px',
+        zIndex: 30,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        maxWidth: '310px',
+        pointerEvents: 'auto'
+      }}>
+        {/* Compact Search Bar */}
+        <div className="glass-panel" style={{ padding: '6px 12px', background: 'rgba(5, 5, 8, 0.92)' }}>
+          <div className="search-input-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Search size={14} style={{ color: '#00f0ff', flexShrink: 0 }} />
             <input
               type="text"
-              placeholder="Search Earth Satellites or NORAD ID..."
+              placeholder="Search Earth Satellites..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              style={{ width: '100%' }}
+              style={{
+                width: '100%',
+                background: 'transparent',
+                border: 'none',
+                color: '#ffffff',
+                fontSize: '0.78rem',
+                fontFamily: 'var(--font-mono)',
+                outline: 'none'
+              }}
             />
           </div>
         </div>
 
-        {/* Orbit Category Filters */}
-        <div className="glass-panel filter-pill-container">
-          <button className={`filter-pill ${filterType === 'all' ? 'active' : ''}`} onClick={() => setFilterType('all')}>
-            All Earth Orbits
+        {/* Compact Category Filters */}
+        <div className="glass-panel" style={{
+          padding: '6px 8px',
+          display: 'flex',
+          gap: '4px',
+          background: 'rgba(5, 5, 8, 0.92)',
+          overflowX: 'auto'
+        }}>
+          <button
+            className={`filter-pill ${filterType === 'all' ? 'active' : ''}`}
+            onClick={() => setFilterType('all')}
+            style={{ padding: '4px 8px', fontSize: '0.7rem' }}
+          >
+            All
           </button>
-          <button className={`filter-pill ${filterType === 'starlink' ? 'active' : ''}`} onClick={() => setFilterType('starlink')}>
+          <button
+            className={`filter-pill ${filterType === 'starlink' ? 'active' : ''}`}
+            onClick={() => setFilterType('starlink')}
+            style={{ padding: '4px 8px', fontSize: '0.7rem' }}
+          >
             <span className="dot-indicator" style={{ background: '#00f0ff' }}></span> Starlink
           </button>
-          <button className={`filter-pill ${filterType === 'station' ? 'active' : ''}`} onClick={() => setFilterType('station')}>
-            <span className="dot-indicator" style={{ background: '#ffd700' }}></span> ISS / Station
+          <button
+            className={`filter-pill ${filterType === 'station' ? 'active' : ''}`}
+            onClick={() => setFilterType('station')}
+            style={{ padding: '4px 8px', fontSize: '0.7rem' }}
+          >
+            <span className="dot-indicator" style={{ background: '#ffd700' }}></span> ISS
           </button>
-          <button className={`filter-pill ${filterType === 'science' ? 'active' : ''}`} onClick={() => setFilterType('science')}>
+          <button
+            className={`filter-pill ${filterType === 'science' ? 'active' : ''}`}
+            onClick={() => setFilterType('science')}
+            style={{ padding: '4px 8px', fontSize: '0.7rem' }}
+          >
             <span className="dot-indicator" style={{ background: '#a855f7' }}></span> Science
           </button>
         </div>
 
-        {/* Active Stats Card - Upgraded Aerospace Styling */}
-        <div className="glass-panel" style={{ padding: '14px 18px', display: 'flex', gap: '20px', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(5, 5, 8, 0.92)', borderLeft: '3px solid #00f0ff' }}>
+        {/* Ultra-Compact Stats Strip */}
+        <div className="glass-panel" style={{
+          padding: '8px 14px',
+          display: 'flex',
+          alignItems: 'center',
+          justify: 'space-between',
+          background: 'rgba(5, 5, 8, 0.94)',
+          borderLeft: '3px solid #00f0ff'
+        }}>
           <div>
-            <div style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: '#00f0ff', letterSpacing: '1.2px', fontWeight: 'bold' }}>
-              EARTH ORBITS TRACKED
+            <div style={{ fontSize: '0.62rem', fontFamily: 'var(--font-mono)', color: '#00f0ff', letterSpacing: '1px', fontWeight: 'bold' }}>
+              ORBITS TRACKED
             </div>
-            <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.6rem', fontWeight: '900', color: '#ffffff', lineHeight: '1.1', marginTop: '2px' }}>
+            <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.25rem', fontWeight: '900', color: '#ffffff', lineHeight: '1' }}>
               {activeCount.toLocaleString()}
             </div>
           </div>
 
-          <div style={{ width: '1px', height: '32px', background: 'rgba(255,255,255,0.15)' }}></div>
+          <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.15)' }}></div>
 
           <div>
-            <div style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: '#ffd700', letterSpacing: '1.2px', fontWeight: 'bold' }}>
+            <div style={{ fontSize: '0.62rem', fontFamily: 'var(--font-mono)', color: '#ffd700', letterSpacing: '1px', fontWeight: 'bold' }}>
               SPACEX STARLINK
             </div>
-            <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.6rem', fontWeight: '900', color: '#ffd700', lineHeight: '1.1', marginTop: '2px' }}>
+            <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.25rem', fontWeight: '900', color: '#ffd700', lineHeight: '1' }}>
               {satellites.filter(s => s.type?.category === 'starlink').length.toLocaleString()}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Time Machine Controls */}
-      <div className="time-controls-bar">
-        <button className="speed-btn" onClick={() => setIsPaused(!isPaused)}>
-          {isPaused ? <Play size={14} color="#00f0ff" /> : <Pause size={14} />}
+      {/* 🎮 COMPACT BOTTOM TIME CONTROLS */}
+      <div className="time-controls-bar" style={{
+        position: 'absolute',
+        bottom: '16px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 30,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '6px 14px',
+        borderRadius: '20px',
+        background: 'rgba(5, 5, 8, 0.94)',
+        border: '1px solid rgba(255, 255, 255, 0.15)'
+      }}>
+        <button className="speed-btn" onClick={() => setIsPaused(!isPaused)} style={{ padding: '4px 8px' }}>
+          {isPaused ? <Play size={12} color="#00f0ff" /> : <Pause size={12} />}
         </button>
-        <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'monospace' }}>SPEED:</span>
+        <span style={{ fontSize: '0.68rem', color: '#94a3b8', fontFamily: 'var(--font-mono)' }}>SPEED:</span>
         <button className={`speed-btn ${simSpeed === 1 ? 'active' : ''}`} onClick={() => { setSimSpeed(1); setIsPaused(false); }}>1x Live</button>
         <button className={`speed-btn ${simSpeed === 10 ? 'active' : ''}`} onClick={() => { setSimSpeed(10); setIsPaused(false); }}>10x</button>
         <button className={`speed-btn ${simSpeed === 60 ? 'active' : ''}`} onClick={() => { setSimSpeed(60); setIsPaused(false); }}>60x</button>
@@ -371,91 +282,23 @@ export default function GlobeViewer({ satellites, selectedSat, setSelectedSat, s
       {/* Mouse Hover Tooltip */}
       {hoveredSat && (
         <div style={{
-          position: 'fixed',
-          bottom: '80px',
-          left: '24px',
+          position: 'absolute',
+          bottom: '70px',
+          left: '20px',
           zIndex: 50,
           background: 'rgba(5, 5, 8, 0.94)',
           border: '1px solid rgba(0, 240, 255, 0.4)',
-          padding: '12px 16px',
+          padding: '10px 14px',
           borderRadius: '6px',
           fontFamily: 'var(--font-mono)',
-          fontSize: '0.8rem',
+          fontSize: '0.78rem',
           color: '#ffffff',
           pointerEvents: 'none'
         }}>
           <div style={{ color: '#00f0ff', fontWeight: 'bold' }}>{hoveredSat.name}</div>
-          <div>NORAD ID: {hoveredSat.noradId} | Alt: {hoveredSat.altitudeKm || 550} km</div>
+          <div>NORAD ID: {hoveredSat.noradId} | Alt: {hoveredSat.__pos?.altKm || 550} km</div>
         </div>
       )}
     </div>
   );
-}
-
-// Procedural NASA Cyber Earth Texture with continents, ocean bathymetry, and grid lines
-function createProceduralEarthTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 2048;
-  canvas.height = 1024;
-  const ctx = canvas.getContext('2d');
-
-  // Deep Blue Ocean base
-  ctx.fillStyle = '#061325';
-  ctx.fillRect(0, 0, 2048, 1024);
-
-  // Continents simulation with cyan glow outlines
-  ctx.fillStyle = '#112948';
-  ctx.strokeStyle = '#00f0ff';
-  ctx.lineWidth = 2;
-
-  // North America
-  ctx.beginPath();
-  ctx.ellipse(560, 320, 280, 180, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-
-  // South America
-  ctx.beginPath();
-  ctx.ellipse(720, 680, 150, 220, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-
-  // Europe & Africa
-  ctx.beginPath();
-  ctx.ellipse(1120, 360, 180, 140, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.ellipse(1140, 620, 170, 220, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-
-  // Asia & Australia
-  ctx.beginPath();
-  ctx.ellipse(1560, 340, 320, 200, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.ellipse(1680, 720, 140, 120, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-
-  // Latitude & Longitude Coordinate Lines
-  ctx.strokeStyle = 'rgba(0, 240, 255, 0.18)';
-  ctx.lineWidth = 1.5;
-  for (let x = 0; x < 2048; x += 128) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, 1024);
-    ctx.stroke();
-  }
-  for (let y = 0; y < 1024; y += 128) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(2048, y);
-    ctx.stroke();
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  return texture;
 }
