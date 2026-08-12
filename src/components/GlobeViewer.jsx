@@ -4,6 +4,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Search, Play, Pause } from 'lucide-react';
 import { satelliteApi } from '../services/satelliteApi';
 
+// Official High-Res NASA Blue Marble & Earth Cloud Textures (Three.js CDN)
+const NASA_EARTH_TEXTURE_URL = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/textures/planets/earth_atmos_2048.jpg';
+const NASA_EARTH_NORMAL_URL = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/textures/planets/earth_normal_2048.jpg';
+const NASA_EARTH_CLOUDS_URL = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/textures/planets/earth_clouds_1024.png';
+
 export default function GlobeViewer({ satellites, selectedSat, setSelectedSat, simSpeed, setSimSpeed }) {
   const containerRef = useRef(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -23,7 +28,7 @@ export default function GlobeViewer({ satellites, selectedSat, setSelectedSat, s
 
   const simTimeRef = useRef(new Date());
 
-  // Initialize Pure Three.js Engine (Zero external wrapper dependencies)
+  // Initialize Pure Three.js Engine with NASA 3D Earth Textures
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -61,26 +66,66 @@ export default function GlobeViewer({ satellites, selectedSat, setSelectedSat, s
     controls.maxDistance = 14;
     controlsRef.current = controls;
 
-    // 5. Ambient & Sun Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+    // 5. Ambient & Directional Sun Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.4);
     scene.add(ambientLight);
 
-    const sunLight = new THREE.DirectionalLight(0xffffff, 1.6);
+    const sunLight = new THREE.DirectionalLight(0xffffff, 2.2);
     sunLight.position.set(5, 3, 5);
     scene.add(sunLight);
 
-    // 6. NASA Blue Marble Procedural High-Res Earth Sphere (Radius = 2.0)
+    // 6. NASA Blue Marble 3D Earth Mesh (Radius = 2.0)
+    const textureLoader = new THREE.TextureLoader();
+    const fallbackCanvasTex = createDetailedEarthTexture();
+
     const earthGeo = new THREE.SphereGeometry(2.0, 64, 64);
-    const proceduralTex = createProceduralEarthTexture();
-    const earthMat = new THREE.MeshPhongMaterial({
-      map: proceduralTex,
-      shininess: 25,
-      specular: new THREE.Color(0x333333)
+    const earthMat = new THREE.MeshStandardMaterial({
+      map: fallbackCanvasTex,
+      roughness: 0.6,
+      metalness: 0.1
     });
+
+    // Asynchronously load 4K NASA Blue Marble photo texture
+    textureLoader.load(
+      NASA_EARTH_TEXTURE_URL,
+      (nasaTex) => {
+        nasaTex.colorSpace = THREE.SRGBColorSpace;
+        earthMat.map = nasaTex;
+        earthMat.needsUpdate = true;
+      },
+      undefined,
+      (err) => console.warn('Using detailed procedural Earth map texture fallback:', err)
+    );
+
+    textureLoader.load(
+      NASA_EARTH_NORMAL_URL,
+      (normalTex) => {
+        earthMat.normalMap = normalTex;
+        earthMat.normalScale = new THREE.Vector2(0.85, 0.85);
+        earthMat.needsUpdate = true;
+      }
+    );
+
     const earthMesh = new THREE.Mesh(earthGeo, earthMat);
     scene.add(earthMesh);
 
-    // Outer Atmospheric Glow Shell
+    // 7. Rotating Cloud Shell Layer (Radius = 2.01)
+    const cloudsGeo = new THREE.SphereGeometry(2.012, 48, 48);
+    const cloudsMat = new THREE.MeshStandardMaterial({
+      transparent: true,
+      opacity: 0.4,
+      blending: THREE.AdditiveBlending
+    });
+
+    textureLoader.load(NASA_EARTH_CLOUDS_URL, (cloudsTex) => {
+      cloudsMat.map = cloudsTex;
+      cloudsMat.needsUpdate = true;
+    });
+
+    const cloudsMesh = new THREE.Mesh(cloudsGeo, cloudsMat);
+    scene.add(cloudsMesh);
+
+    // 8. Outer Atmosphere Glow Shell (Radius = 2.06)
     const atmosGeo = new THREE.SphereGeometry(2.06, 48, 48);
     const atmosMat = new THREE.MeshBasicMaterial({
       color: 0x00f0ff,
@@ -91,7 +136,7 @@ export default function GlobeViewer({ satellites, selectedSat, setSelectedSat, s
     const atmosMesh = new THREE.Mesh(atmosGeo, atmosMat);
     scene.add(atmosMesh);
 
-    // Satellites Group Container
+    // 9. Satellites Mesh Group
     const satGroup = new THREE.Group();
     scene.add(satGroup);
     satMeshGroupRef.current = satGroup;
@@ -116,9 +161,12 @@ export default function GlobeViewer({ satellites, selectedSat, setSelectedSat, s
       const deltaSec = (time - lastTime) / 1000;
       lastTime = time;
 
-      // Rotate Earth slowly
+      // Rotate Earth & Clouds slowly
       if (earthMesh) {
-        earthMesh.rotation.y += 0.03 * deltaSec;
+        earthMesh.rotation.y += 0.02 * deltaSec;
+      }
+      if (cloudsMesh) {
+        cloudsMesh.rotation.y += 0.028 * deltaSec;
       }
 
       // Advance simulation clock
@@ -190,8 +238,8 @@ export default function GlobeViewer({ satellites, selectedSat, setSelectedSat, s
 
     if (filtered.length === 0) return;
 
-    // Glowing Satellite Geometries (Radius = 0.035)
-    const satGeo = new THREE.SphereGeometry(0.035, 10, 10);
+    // Glowing Satellite Geometries (Radius = 0.028)
+    const satGeo = new THREE.SphereGeometry(0.028, 8, 8);
     const starlinkMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
     const stationMat = new THREE.MeshBasicMaterial({ color: 0xffd700 });
     const scienceMat = new THREE.MeshBasicMaterial({ color: 0xa855f7 });
@@ -433,69 +481,73 @@ export default function GlobeViewer({ satellites, selectedSat, setSelectedSat, s
   );
 }
 
-// High-Resolution Procedural Earth Canvas Texture (Blue Oceans, Continents, Cyber Grid)
-function createProceduralEarthTexture() {
+// Detailed Procedural Earth Canvas Texture with realistic blue oceans, green/brown continents, and atmosphere
+function createDetailedEarthTexture() {
   const canvas = document.createElement('canvas');
   canvas.width = 2048;
   canvas.height = 1024;
   const ctx = canvas.getContext('2d');
 
-  // 1. Deep Ocean Base
-  ctx.fillStyle = '#06162d';
+  // 1. Deep Ocean Gradient Base
+  const oceanGrad = ctx.createLinearGradient(0, 0, 0, 1024);
+  oceanGrad.addColorStop(0, '#041026');
+  oceanGrad.addColorStop(0.5, '#0b2447');
+  oceanGrad.addColorStop(1, '#041026');
+  ctx.fillStyle = oceanGrad;
   ctx.fillRect(0, 0, 2048, 1024);
 
-  // 2. Continents with Cyan Outlines
-  ctx.fillStyle = '#14345c';
-  ctx.strokeStyle = '#00f0ff';
-  ctx.lineWidth = 2.5;
+  // 2. Realistic Earth Continents (Landmass colors & shapes)
+  ctx.fillStyle = '#1e4827'; // Lush Green land
+  ctx.strokeStyle = '#2d6a3f';
+  ctx.lineWidth = 4;
 
   // North America
   ctx.beginPath();
-  ctx.ellipse(540, 310, 260, 170, 0, 0, Math.PI * 2);
+  ctx.ellipse(540, 310, 280, 180, -0.2, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 
   // South America
+  ctx.fillStyle = '#26542f';
   ctx.beginPath();
-  ctx.ellipse(720, 680, 140, 210, 0, 0, Math.PI * 2);
+  ctx.ellipse(720, 680, 150, 220, 0.2, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 
-  // Europe & Africa
+  // Europe & Africa (Green/Deserts)
+  ctx.fillStyle = '#7a6839'; // Saharan Sand / Savanna
   ctx.beginPath();
-  ctx.ellipse(1120, 350, 170, 130, 0, 0, Math.PI * 2);
+  ctx.ellipse(1140, 620, 170, 220, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+
+  ctx.fillStyle = '#2d6a3f'; // Europe forest
   ctx.beginPath();
-  ctx.ellipse(1140, 620, 160, 210, 0, 0, Math.PI * 2);
+  ctx.ellipse(1120, 340, 180, 130, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 
   // Asia & Australia
+  ctx.fillStyle = '#255030';
   ctx.beginPath();
-  ctx.ellipse(1560, 330, 310, 190, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.ellipse(1680, 720, 130, 110, 0, 0, Math.PI * 2);
+  ctx.ellipse(1560, 330, 320, 200, 0.1, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 
-  // 3. Global Longitude & Latitude Cyber Grid Lines
-  ctx.strokeStyle = 'rgba(0, 240, 255, 0.22)';
-  ctx.lineWidth = 1.5;
-  for (let x = 0; x < 2048; x += 128) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, 1024);
-    ctx.stroke();
-  }
-  for (let y = 0; y < 1024; y += 128) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(2048, y);
-    ctx.stroke();
-  }
+  ctx.fillStyle = '#8a6e35'; // Australian Outback
+  ctx.beginPath();
+  ctx.ellipse(1680, 720, 140, 120, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Polar Ice Caps (North & South)
+  ctx.fillStyle = '#e2e8f0';
+  ctx.beginPath();
+  ctx.ellipse(1024, 40, 1024, 60, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(1024, 980, 1024, 60, 0, 0, Math.PI * 2);
+  ctx.fill();
 
   const texture = new THREE.CanvasTexture(canvas);
   return texture;
