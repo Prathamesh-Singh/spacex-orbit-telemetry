@@ -1,100 +1,183 @@
 import React, { useEffect, useRef, useState } from 'react';
-import Globe from 'globe.gl';
-import { Search, Play, Pause, RefreshCw } from 'lucide-react';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { Search, Play, Pause } from 'lucide-react';
 import { satelliteApi } from '../services/satelliteApi';
 
 export default function GlobeViewer({ satellites, selectedSat, setSelectedSat, simSpeed, setSimSpeed }) {
   const containerRef = useRef(null);
-  const globeInstanceRef = useRef(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [isPaused, setIsPaused] = useState(false);
   const [activeCount, setActiveCount] = useState(0);
   const [hoveredSat, setHoveredSat] = useState(null);
 
+  // Pure Three.js References
+  const sceneRef = useRef(null);
+  const cameraRef = useRef(null);
+  const rendererRef = useRef(null);
+  const controlsRef = useRef(null);
+  const satMeshGroupRef = useRef(null);
+  const orbitLineRef = useRef(null);
+  const satsDataRef = useRef([]);
+
   const simTimeRef = useRef(new Date());
 
-  // Initialize Globe.gl 3D Engine with NASA Blue Marble & Night Lights
+  // Initialize Pure Three.js Engine (Zero external wrapper dependencies)
   useEffect(() => {
     if (!containerRef.current) return;
 
     const width = containerRef.current.clientWidth || window.innerWidth;
     const height = containerRef.current.clientHeight || (window.innerHeight - 65);
 
-    // Initialize 3D Globe with NASA Blue Marble Texture
-    const globe = Globe()(containerRef.current)
-      .width(width)
-      .height(height)
-      .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
-      .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
-      .backgroundImageUrl('//unpkg.com/three-globe/example/img/night-sky.png')
-      .atmosphereColor('#00f0ff')
-      .atmosphereAltitude(0.18)
-      .pointOfView({ lat: 20, lng: 0, altitude: 2.2 });
+    // 1. Scene
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#030712');
+    sceneRef.current = scene;
 
-    // Enable OrbitControls Damping & Smooth Interaction
-    const controls = globe.controls();
+    // 2. Camera
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    camera.position.set(0, 2.4, 5.8);
+    cameraRef.current = camera;
+
+    // 3. WebGL Renderer
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    } catch (e) {
+      renderer = new THREE.WebGLRenderer({ antialias: false });
+    }
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    containerRef.current.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
+
+    // 4. OrbitControls
+    const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.4;
+    controls.rotateSpeed = 0.8;
+    controls.minDistance = 2.2;
+    controls.maxDistance = 14;
+    controlsRef.current = controls;
 
-    // Custom 3D Object Renderer for Glowing Satellite Points
-    globe
-      .customLayerData([])
-      .customThreeObject(d => {
-        const color = d.type?.category === 'station' ? 0xffd700 : (d.type?.category === 'science' ? 0xa855f7 : 0x00f0ff);
-        const radius = d.type?.category === 'station' ? 0.045 : 0.032;
-        const THREE = window.THREE || globe.scene().children[0].constructor.module || require('three');
-        const geo = new THREE.SphereGeometry(radius, 10, 10);
-        const mat = new THREE.MeshBasicMaterial({ color });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.userData = d;
-        return mesh;
-      })
-      .customThreeObjectUpdate((obj, d) => {
-        // Compute 3D Keplerian position around Earth sphere (Radius = 100)
-        const pos = d.__pos || { lat: 0, lng: 0, altKm: 550 };
-        const altScale = 100 + (pos.altKm || 550) / 6371 * 100;
-        const latRad = pos.lat * (Math.PI / 180);
-        const lonRad = pos.lng * (Math.PI / 180);
+    // 5. Ambient & Sun Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+    scene.add(ambientLight);
 
-        obj.position.x = altScale * Math.cos(latRad) * Math.cos(lonRad);
-        obj.position.y = altScale * Math.sin(latRad);
-        obj.position.z = altScale * Math.cos(latRad) * Math.sin(lonRad);
-      })
-      .onCustomLayerClick((d) => {
-        if (d) setSelectedSat(d);
-      })
-      .onCustomLayerHover((d) => {
-        setHoveredSat(d);
-        if (containerRef.current) {
-          containerRef.current.style.cursor = d ? 'pointer' : 'default';
-        }
-      });
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.6);
+    sunLight.position.set(5, 3, 5);
+    scene.add(sunLight);
 
-    globeInstanceRef.current = globe;
+    // 6. NASA Blue Marble Procedural High-Res Earth Sphere (Radius = 2.0)
+    const earthGeo = new THREE.SphereGeometry(2.0, 64, 64);
+    const proceduralTex = createProceduralEarthTexture();
+    const earthMat = new THREE.MeshPhongMaterial({
+      map: proceduralTex,
+      shininess: 25,
+      specular: new THREE.Color(0x333333)
+    });
+    const earthMesh = new THREE.Mesh(earthGeo, earthMat);
+    scene.add(earthMesh);
 
-    // Handle Window Resize
+    // Outer Atmospheric Glow Shell
+    const atmosGeo = new THREE.SphereGeometry(2.06, 48, 48);
+    const atmosMat = new THREE.MeshBasicMaterial({
+      color: 0x00f0ff,
+      transparent: true,
+      opacity: 0.14,
+      side: THREE.BackSide
+    });
+    const atmosMesh = new THREE.Mesh(atmosGeo, atmosMat);
+    scene.add(atmosMesh);
+
+    // Satellites Group Container
+    const satGroup = new THREE.Group();
+    scene.add(satGroup);
+    satMeshGroupRef.current = satGroup;
+
+    // Window Resize Handler
     const handleResize = () => {
-      if (!containerRef.current || !globe) return;
+      if (!containerRef.current || !renderer || !camera) return;
       const w = containerRef.current.clientWidth || window.innerWidth;
       const h = containerRef.current.clientHeight || (window.innerHeight - 65);
-      globe.width(w).height(h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
 
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (containerRef.current) {
-        containerRef.current.innerHTML = '';
-      }
-    };
-  }, []);
+    // 60fps Real-Time Orbit Animation Loop
+    let animationFrameId;
+    let lastTime = performance.now();
 
-  // Update Satellites Data & Real-Time 3D Positions across 360 Degrees
+    const animate = (time) => {
+      animationFrameId = requestAnimationFrame(animate);
+      const deltaSec = (time - lastTime) / 1000;
+      lastTime = time;
+
+      // Rotate Earth slowly
+      if (earthMesh) {
+        earthMesh.rotation.y += 0.03 * deltaSec;
+      }
+
+      // Advance simulation clock
+      if (!isPaused) {
+        simTimeRef.current = new Date(simTimeRef.current.getTime() + deltaSec * 1000 * simSpeed);
+      }
+
+      // Update 3D Keplerian positions for all satellites across full 360-degree sphere
+      if (satMeshGroupRef.current && satMeshGroupRef.current.children.length > 0) {
+        const tSec = simTimeRef.current.getTime() / 1000;
+        satMeshGroupRef.current.children.forEach((mesh) => {
+          const sat = mesh.userData;
+          if (sat) {
+            const meanMotionRad = (2 * Math.PI) / (((sat.periodMinutes && !isNaN(sat.periodMinutes)) ? sat.periodMinutes : 95) * 60);
+            const u = ((sat.meanAnomaly || 0) * Math.PI / 180 + meanMotionRad * (tSec - 1700000000)) % (2 * Math.PI);
+            const incRad = (sat.inclination || 53.0) * Math.PI / 180;
+            const raanRad = (sat.raan || 0) * Math.PI / 180;
+
+            const radius = 2.0 + (sat.altitudeKm || 550) / 6371;
+
+            // 3D Orbital Transformation in ECI space
+            const xOrb = radius * Math.cos(u);
+            const yOrb = radius * Math.sin(u);
+
+            const x = xOrb * Math.cos(raanRad) - yOrb * Math.sin(raanRad) * Math.cos(incRad);
+            const y = xOrb * Math.sin(raanRad) + yOrb * Math.cos(raanRad) * Math.cos(incRad);
+            const z = yOrb * Math.sin(incRad);
+
+            mesh.position.set(x, z, y);
+          }
+        });
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    };
+    animate(performance.now());
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      window.removeEventListener('resize', handleResize);
+      if (renderer.domElement && containerRef.current) {
+        containerRef.current.removeChild(renderer.domElement);
+      }
+      renderer.dispose();
+    };
+  }, [isPaused, simSpeed]);
+
+  // Update Satellites Mesh Group when filter or search changes
   useEffect(() => {
-    if (!satellites || !globeInstanceRef.current) return;
+    if (!satMeshGroupRef.current || !satellites) return;
+
+    // Clear existing children
+    while (satMeshGroupRef.current.children.length > 0) {
+      const child = satMeshGroupRef.current.children[0];
+      satMeshGroupRef.current.remove(child);
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    }
 
     const filtered = satellites.filter(sat => {
       const matchesSearch = !searchQuery || sat.name.toLowerCase().includes(searchQuery.toLowerCase()) || String(sat.noradId).includes(searchQuery);
@@ -103,52 +186,99 @@ export default function GlobeViewer({ satellites, selectedSat, setSelectedSat, s
     });
 
     setActiveCount(filtered.length);
+    satsDataRef.current = filtered;
 
-    // Compute 3D positions for all filtered satellites
-    const now = simTimeRef.current;
-    const dataWithPositions = filtered.map(sat => {
-      const pos = satelliteApi.computePosition(sat, now);
-      return {
-        ...sat,
-        __pos: pos
-      };
+    if (filtered.length === 0) return;
+
+    // Glowing Satellite Geometries (Radius = 0.035)
+    const satGeo = new THREE.SphereGeometry(0.035, 10, 10);
+    const starlinkMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
+    const stationMat = new THREE.MeshBasicMaterial({ color: 0xffd700 });
+    const scienceMat = new THREE.MeshBasicMaterial({ color: 0xa855f7 });
+
+    const tSec = simTimeRef.current.getTime() / 1000;
+
+    filtered.forEach((sat) => {
+      let mat = starlinkMat;
+      if (sat.type?.category === 'station') mat = stationMat;
+      else if (sat.type?.category === 'science') mat = scienceMat;
+
+      const mesh = new THREE.Mesh(satGeo, mat);
+
+      const meanMotionRad = (2 * Math.PI) / (((sat.periodMinutes && !isNaN(sat.periodMinutes)) ? sat.periodMinutes : 95) * 60);
+      const u = ((sat.meanAnomaly || 0) * Math.PI / 180 + meanMotionRad * (tSec - 1700000000)) % (2 * Math.PI);
+      const incRad = (sat.inclination || 53.0) * Math.PI / 180;
+      const raanRad = (sat.raan || 0) * Math.PI / 180;
+
+      const radius = 2.0 + (sat.altitudeKm || 550) / 6371;
+
+      const xOrb = radius * Math.cos(u);
+      const yOrb = radius * Math.sin(u);
+
+      const x = xOrb * Math.cos(raanRad) - yOrb * Math.sin(raanRad) * Math.cos(incRad);
+      const y = xOrb * Math.sin(raanRad) + yOrb * Math.cos(raanRad) * Math.cos(incRad);
+      const z = yOrb * Math.sin(incRad);
+
+      mesh.position.set(x, z, y);
+      mesh.userData = sat;
+      satMeshGroupRef.current.add(mesh);
     });
-
-    globeInstanceRef.current.customLayerData(dataWithPositions);
   }, [satellites, filterType, searchQuery]);
 
-  // Real-time animation tick for satellite orbits
+  // Raycaster for Hover & Selection
   useEffect(() => {
-    let animId;
-    let lastTime = performance.now();
+    if (!rendererRef.current || !cameraRef.current || !satMeshGroupRef.current) return;
 
-    const tick = (time) => {
-      animId = requestAnimationFrame(tick);
-      const deltaSec = (time - lastTime) / 1000;
-      lastTime = time;
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
 
-      if (!isPaused && globeInstanceRef.current) {
-        simTimeRef.current = new Date(simTimeRef.current.getTime() + deltaSec * 1000 * simSpeed);
-        const currTime = simTimeRef.current;
+    const handlePointerMove = (e) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
-        const currentData = globeInstanceRef.current.customLayerData();
-        if (currentData && currentData.length > 0) {
-          const updated = currentData.map(sat => ({
-            ...sat,
-            __pos: satelliteApi.computePosition(sat, currTime)
-          }));
-          globeInstanceRef.current.customLayerData(updated);
-        }
+      raycaster.setFromCamera(mouse, cameraRef.current);
+      const intersects = raycaster.intersectObjects(satMeshGroupRef.current.children);
+
+      if (intersects.length > 0) {
+        const satData = intersects[0].object.userData;
+        setHoveredSat(satData);
+        containerRef.current.style.cursor = 'pointer';
+      } else {
+        setHoveredSat(null);
+        containerRef.current.style.cursor = 'grab';
       }
     };
 
-    animId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(animId);
-  }, [isPaused, simSpeed]);
+    const handleClick = (e) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, cameraRef.current);
+      const intersects = raycaster.intersectObjects(satMeshGroupRef.current.children);
+
+      if (intersects.length > 0) {
+        const satData = intersects[0].object.userData;
+        setSelectedSat(satData);
+      }
+    };
+
+    const domElement = rendererRef.current.domElement;
+    domElement.addEventListener('mousemove', handlePointerMove);
+    domElement.addEventListener('click', handleClick);
+
+    return () => {
+      domElement.removeEventListener('mousemove', handlePointerMove);
+      domElement.removeEventListener('click', handleClick);
+    };
+  }, [setSelectedSat]);
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', background: '#030712' }}>
-      {/* 3D Earth Globe Viewport */}
+      {/* Pure Three.js WebGL Canvas Viewport */}
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
       {/* 🎛️ SLEEK COMPACT TOP-LEFT TELEMETRY HUD TOOLBAR */}
@@ -296,9 +426,77 @@ export default function GlobeViewer({ satellites, selectedSat, setSelectedSat, s
           pointerEvents: 'none'
         }}>
           <div style={{ color: '#00f0ff', fontWeight: 'bold' }}>{hoveredSat.name}</div>
-          <div>NORAD ID: {hoveredSat.noradId} | Alt: {hoveredSat.__pos?.altKm || 550} km</div>
+          <div>NORAD ID: {hoveredSat.noradId} | Alt: {hoveredSat.altitudeKm || 550} km</div>
         </div>
       )}
     </div>
   );
+}
+
+// High-Resolution Procedural Earth Canvas Texture (Blue Oceans, Continents, Cyber Grid)
+function createProceduralEarthTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 2048;
+  canvas.height = 1024;
+  const ctx = canvas.getContext('2d');
+
+  // 1. Deep Ocean Base
+  ctx.fillStyle = '#06162d';
+  ctx.fillRect(0, 0, 2048, 1024);
+
+  // 2. Continents with Cyan Outlines
+  ctx.fillStyle = '#14345c';
+  ctx.strokeStyle = '#00f0ff';
+  ctx.lineWidth = 2.5;
+
+  // North America
+  ctx.beginPath();
+  ctx.ellipse(540, 310, 260, 170, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // South America
+  ctx.beginPath();
+  ctx.ellipse(720, 680, 140, 210, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Europe & Africa
+  ctx.beginPath();
+  ctx.ellipse(1120, 350, 170, 130, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(1140, 620, 160, 210, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Asia & Australia
+  ctx.beginPath();
+  ctx.ellipse(1560, 330, 310, 190, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(1680, 720, 130, 110, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // 3. Global Longitude & Latitude Cyber Grid Lines
+  ctx.strokeStyle = 'rgba(0, 240, 255, 0.22)';
+  ctx.lineWidth = 1.5;
+  for (let x = 0; x < 2048; x += 128) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, 1024);
+    ctx.stroke();
+  }
+  for (let y = 0; y < 1024; y += 128) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(2048, y);
+    ctx.stroke();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  return texture;
 }
